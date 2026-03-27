@@ -6,6 +6,7 @@
   <title>写真フレーマー</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/photopea/UTIF.js/UTIF.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -785,31 +786,64 @@ function loadImage(file) {
 }
 
 async function loadHeic(file) {
-  // createImageBitmap は Chrome 116以降でHEICをネイティブサポート
-  let bitmap;
+  // 1) ブラウザネイティブ（Chrome 116+）を最初に試みる
   try {
-    bitmap = await createImageBitmap(file);
-  } catch {
+    const bitmap = await createImageBitmap(file);
+    const c = document.createElement('canvas');
+    c.width  = bitmap.width;
+    c.height = bitmap.height;
+    c.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload  = resolve;
+      img.onerror = reject;
+      img.src = c.toDataURL();
+    });
+    return img;
+  } catch { /* ネイティブ非対応 → heic2any へフォールバック */ }
+
+  // 2) heic2any（libheif WASM）でデコード
+  if (typeof heic2any === 'undefined') {
     throw new Error(
-      `HEICファイルの読み込みに失敗しました。\n` +
-      `このブラウザはHEICのネイティブデコードに対応していません。\n` +
-      `Chrome 116以降をお使いください。`
+      `HEICの変換ライブラリ（heic2any）が読み込まれていません。\n` +
+      `インターネット接続を確認してください。`
     );
   }
 
-  const c   = document.createElement('canvas');
-  c.width   = bitmap.width;
-  c.height  = bitmap.height;
-  c.getContext('2d').drawImage(bitmap, 0, 0);
-  bitmap.close();
+  let blob;
+  try {
+    blob = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
+  } catch (e) {
+    // heic2any が返すエラーコードで破損・非対応を判別
+    const code = e && e.code;
+    if (code === 1) {
+      throw new Error(`${file.name}\n\nHEICファイルが破損しているか、対応していない形式です。`);
+    }
+    if (code === 2) {
+      throw new Error(`${file.name}\n\nHEIF/HEICシーケンス画像（バースト）は非対応です。`);
+    }
+    throw new Error(`${file.name}\n\nHEIC変換に失敗しました: ${e.message ?? e}`);
+  }
 
-  const img = new Image();
-  await new Promise((resolve, reject) => {
-    img.onload  = resolve;
-    img.onerror = reject;
-    img.src = c.toDataURL();
-  });
-  return img;
+  // heic2any は単一Blob または Blob[] を返す
+  const resultBlob = Array.isArray(blob) ? blob[0] : blob;
+  if (!resultBlob || resultBlob.size === 0) {
+    throw new Error(`${file.name}\n\nHEIC変換結果が空です。ファイルが破損している可能性があります。`);
+  }
+
+  const url = URL.createObjectURL(resultBlob);
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload  = resolve;
+      img.onerror = () => reject(new Error(`${file.name}\n\n変換後の画像を表示できませんでした。`));
+      img.src = url;
+    });
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function loadTiff(file) {
