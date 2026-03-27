@@ -295,6 +295,137 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+    /* ── Save modal ─────────────────────────────────────────────────────── */
+    .save-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      z-index: 300;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+      gap: 16px;
+    }
+    .save-modal.open { display: flex; }
+    .save-modal-hint {
+      color: #fff;
+      font-size: 14px;
+      text-align: center;
+      background: rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px 18px;
+      line-height: 1.7;
+      max-width: 320px;
+    }
+    #save-modal-img {
+      max-width: 100%;
+      max-height: 65vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    .save-modal-close {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 32px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    /* ── Sidebar backdrop (mobile) ──────────────────────────────────────── */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 140;
+    }
+
+    /* ── Bottom bar (mobile) ────────────────────────────────────────────── */
+    .bottom-bar { display: none; }
+
+    /* ── Mobile ─────────────────────────────────────────────────────────── */
+    @media (max-width: 767px) {
+      body { height: 100dvh; }
+
+      /* sidebar → bottom sheet */
+      .sidebar {
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        width: 100%;
+        max-height: 82dvh;
+        border-radius: 16px 16px 0 0;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+        z-index: 150;
+        overflow-y: auto;
+        padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+      }
+      .sidebar.open { transform: translateY(0); }
+      .sidebar::before {
+        content: '';
+        display: block;
+        width: 36px; height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin: 12px auto 8px;
+      }
+      .sidebar-backdrop.open { display: block; }
+
+      /* content: room for bottom bar */
+      .content { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+
+      /* 2-column grid */
+      .photo-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+      /* hide desktop-only buttons */
+      #btn-refresh, #btn-dl-all, #btn-clear { display: none; }
+
+      header h1 { font-size: 15px; }
+
+      /* bottom bar */
+      .bottom-bar {
+        display: flex;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        height: calc(56px + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        z-index: 50;
+      }
+      .bottom-bar-btn {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        color: var(--text-dim);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: color 0.15s;
+        padding: 0;
+      }
+      .bottom-bar-btn .bb-icon { font-size: 21px; line-height: 1; }
+      .bottom-bar-btn .bb-label { font-size: 10px; }
+      .bottom-bar-btn:active,
+      .bottom-bar-btn.active { color: var(--accent-light); }
+    }
+
+    /* ── Touch: card actions always visible ─────────────────────────────── */
+    @media (hover: none) {
+      .photo-card .card-actions { opacity: 1; }
+      .icon-btn { width: 32px; height: 32px; font-size: 15px; }
+    }
+
   </style>
 </head>
 <body>
@@ -307,13 +438,13 @@
 <div class="main">
 
   <!-- ── Sidebar ── -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
 
     <!-- Upload -->
     <div class="upload-area" id="upload-area">
       <div class="upload-icon">&#x1F4C2;</div>
       <p>クリック または ドラッグ&amp;ドロップ<br>で写真を追加（複数可）</p>
-      <input type="file" id="file-input" accept="image/*,.tif,.tiff" multiple style="display:none">
+      <input type="file" id="file-input" accept="image/*,.tif,.tiff,.heic,.heif" multiple style="display:none">
     </div>
 
     <!-- Aspect ratio -->
@@ -412,12 +543,31 @@
         <polyline points="21 15 16 10 5 21"/>
       </svg>
       <p class="main-msg">写真をアップロードしてください</p>
-      <p class="sub-msg">左のパネルから追加するか、ここにドロップしてください</p>
+      <p class="sub-msg">ボタンをタップするか、ここにドロップして追加できます</p>
     </div>
     <div class="photo-grid" id="photo-grid" style="display:none"></div>
   </div>
 
 </div><!-- /main -->
+
+<!-- Sidebar backdrop (mobile) -->
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+<!-- Bottom bar (mobile) -->
+<nav class="bottom-bar">
+  <button class="bottom-bar-btn" id="btn-upload-mobile">
+    <span class="bb-icon">📂</span><span class="bb-label">追加</span>
+  </button>
+  <button class="bottom-bar-btn" id="btn-settings-toggle">
+    <span class="bb-icon">⚙️</span><span class="bb-label">設定</span>
+  </button>
+  <button class="bottom-bar-btn" id="btn-refresh-mobile">
+    <span class="bb-icon">🔄</span><span class="bb-label">更新</span>
+  </button>
+  <button class="bottom-bar-btn" id="btn-dl-all-mobile">
+    <span class="bb-icon">💾</span><span class="bb-label">全保存</span>
+  </button>
+</nav>
 
 <!-- Progress overlay -->
 <div class="progress-overlay" id="progress-overlay">
@@ -425,6 +575,13 @@
     <div class="spinner"></div>
     <p id="progress-text">処理中...</p>
   </div>
+</div>
+
+<!-- Save modal (mobile) -->
+<div class="save-modal" id="save-modal">
+  <p class="save-modal-hint" id="save-modal-hint"></p>
+  <img id="save-modal-img" src="" alt="保存する画像">
+  <button class="save-modal-close" id="save-modal-close">閉じる</button>
 </div>
 
 <script>
@@ -581,9 +738,14 @@ function isTiff(file) {
          /\.tiff?$/i.test(file.name);
 }
 
+function isHeic(file) {
+  return file.type === 'image/heic' || file.type === 'image/heif' ||
+         /\.hei[cf]$/i.test(file.name);
+}
+
 async function addImages(files) {
   const valid = Array.from(files).filter(f =>
-    f.type.startsWith('image/') || isTiff(f)
+    f.type.startsWith('image/') || isTiff(f) || isHeic(f)
   );
   if (!valid.length) return;
 
@@ -592,10 +754,18 @@ async function addImages(files) {
   for (let i = 0; i < valid.length; i++) {
     updateProgress(`読み込み中... ${i + 1} / ${valid.length}`);
     try {
-      const img = isTiff(valid[i]) ? await loadTiff(valid[i]) : await loadImage(valid[i]);
+      let img;
+      if (isTiff(valid[i])) {
+        img = await loadTiff(valid[i]);
+      } else if (isHeic(valid[i])) {
+        img = await loadHeic(valid[i]);
+      } else {
+        img = await loadImage(valid[i]);
+      }
       state.images.push({ file: valid[i], img });
     } catch (e) {
       console.error('読み込み失敗:', valid[i].name, e);
+      if (isHeic(valid[i])) alert(`${valid[i].name}\n\n${e.message}`);
     }
     await tick();
   }
@@ -612,6 +782,34 @@ function loadImage(file) {
     img.onerror = reject;
     img.src = url;
   });
+}
+
+async function loadHeic(file) {
+  // createImageBitmap は Chrome 116以降でHEICをネイティブサポート
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error(
+      `HEICファイルの読み込みに失敗しました。\n` +
+      `このブラウザはHEICのネイティブデコードに対応していません。\n` +
+      `Chrome 116以降をお使いください。`
+    );
+  }
+
+  const c   = document.createElement('canvas');
+  c.width   = bitmap.width;
+  c.height  = bitmap.height;
+  c.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload  = resolve;
+    img.onerror = reject;
+    img.src = c.toDataURL();
+  });
+  return img;
 }
 
 async function loadTiff(file) {
@@ -639,6 +837,33 @@ async function loadTiff(file) {
 
 function tick() { return new Promise(r => setTimeout(r, 0)); }
 
+// ── Mobile helpers ─────────────────────────────────────────────────────────
+function isMobile() { return window.matchMedia('(max-width: 767px)').matches; }
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// ── Save modal (モバイル: 長押し保存) ──────────────────────────────────────
+function showSaveModal(blob) {
+  const modal = document.getElementById('save-modal');
+  const img   = document.getElementById('save-modal-img');
+  const url   = URL.createObjectURL(blob);
+  img.src = url;
+  document.getElementById('save-modal-hint').textContent = isIOS()
+    ? '画像を長押しして「写真に追加」を選んでください'
+    : '画像を長押しして保存してください';
+  modal.classList.add('open');
+
+  function close() {
+    modal.classList.remove('open');
+    URL.revokeObjectURL(url);
+    img.src = '';
+  }
+  document.getElementById('save-modal-close').onclick = close;
+  modal.onclick = e => { if (e.target === modal) close(); };
+}
+
 // ── Single download ────────────────────────────────────────────────────────
 async function downloadSingle(idx) {
   const item = state.images[idx];
@@ -650,7 +875,12 @@ async function downloadSingle(idx) {
   const quality  = s.format === 'jpeg' ? s.quality : undefined;
 
   const blob = await new Promise(r => canvas.toBlob(r, mimeType, quality));
-  triggerDownload(blob, baseName(item.file.name) + `_framed.${ext}`);
+
+  if (isMobile()) {
+    showSaveModal(blob);
+  } else {
+    triggerDownload(blob, baseName(item.file.name) + `_framed.${ext}`);
+  }
 }
 
 // ── Download all as ZIP ────────────────────────────────────────────────────
@@ -798,6 +1028,25 @@ watchIds.forEach(id => {
   document.getElementById(id).addEventListener('input',  schedulePreview);
   document.getElementById(id).addEventListener('change', schedulePreview);
 });
+
+// ── Settings panel toggle (mobile) ────────────────────────────────────────
+function openSettings() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+}
+document.getElementById('btn-settings-toggle').addEventListener('click', openSettings);
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSettings);
+
+// ── Bottom bar wiring (mobile) ─────────────────────────────────────────────
+document.getElementById('btn-upload-mobile').addEventListener('click', () =>
+  document.getElementById('file-input').click()
+);
+document.getElementById('btn-refresh-mobile').addEventListener('click', renderGrid);
+document.getElementById('btn-dl-all-mobile').addEventListener('click', downloadAll);
 
 // ── Init ───────────────────────────────────────────────────────────────────
 </script>
